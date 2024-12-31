@@ -1,0 +1,161 @@
+<html>
+
+<head>
+  <title>最適化ベクトルタイル軌道の中心線の3次元表示</title>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <script src='https://unpkg.com/maplibre-gl@4.5.0/dist/maplibre-gl.js'></script>
+  <link href='https://unpkg.com/maplibre-gl@4.5.0/dist/maplibre-gl.css' rel='stylesheet' />
+  <script src="https://unpkg.com/pmtiles@2.11.0/dist/index.js"></script>
+  <script src="https://unpkg.com/deck.gl@8.9.0/dist.min.js"></script>
+  <style>
+    body {
+      margin: 0;
+    }
+
+    #map {
+      height: 100%;
+      width: 100%;
+    }
+  </style>
+</head>
+
+<body>
+  <div id="map"></div>
+  <script type="text/javascript">
+    // Protocolの設定
+    let protocol = new pmtiles.Protocol();
+    maplibregl.addProtocol('pmtiles', (request) => {
+      return new Promise((resolve, reject) => {
+        const callback = (err, data) => {
+          if (err) {
+            reject(err);
+          } else {
+            resolve({ data });
+          }
+        };
+        protocol.tile(request, callback);
+      });
+    });
+
+    // マップの初期化
+    const map = new maplibregl.Map({
+      container: 'map',
+      // style: './style/std.json',
+      style: './style/skeleton.json',
+      hash: true,
+      zoom: 16.38,
+      center: [139.414424, 35.698071],
+      pitch: 69,
+      bearing: 0,
+      maxPitch: 85,
+      attributionControl: false,
+    })
+
+    // ズーム・回転
+    map.addControl(new maplibregl.NavigationControl());
+
+    // フルスクリーンモードのオンオフ
+    map.addControl(new maplibregl.FullscreenControl());
+
+    // 現在位置表示
+    map.addControl(new maplibregl.GeolocateControl({
+      positionOptions: {
+        enableHighAccuracy: false
+      },
+      fitBoundsOptions: { maxZoom: 18 },
+      trackUserLocation: true,
+      showUserLocation: true
+    }));
+
+    // スケール表示
+    map.addControl(new maplibregl.ScaleControl({
+      maxWidth: 200,
+      unit: 'metric'
+    }));
+
+    // Attributionを折りたたみ表示
+    map.addControl(new maplibregl.AttributionControl({
+      compact: true,
+      customAttribution: '<a href="" target="_blank">最適化ベクトルタイル（道路中心線および軌道の中心線）を加工して作成</a>'
+    }));
+
+    map.on('load', () => {
+      // PLATEAU建築物モデル（PMTiles）ソース
+      map.addSource("plateau-pmtiles", {
+        type: "vector",
+        url: "pmtiles://https://shiworks.xsrv.jp/pmtiles-data/plateau/PLATEAU_2023_LOD0.pmtiles",
+        // url: "pmtiles://https://pmtiles-data.s3.ap-northeast-1.amazonaws.com/plateau/PLATEAU_2023_LOD0.pmtiles",
+        minzoom: 16,
+        maxzoom: 16,
+        attribution: '<a href="https://www.geospatial.jp/ckan/dataset/plateau">3D都市モデルPLATEAU建築物モデルLOD1（国土交通省）</a>'
+      });
+
+      // PLATEAU建築物モデル（PMTiles）レイヤ
+      map.addLayer({
+        'id': 'plateau-pmtiles',
+        'source': 'plateau-pmtiles',
+        'source-layer': "PLATEAU_2023_LOD0",
+        "minzoom": 16,
+        "maxzoom": 23,
+        'type': 'fill-extrusion',
+        'paint': {
+          "fill-extrusion-color": '#FFFFFF',
+          "fill-extrusion-opacity": 0.6,
+          "fill-extrusion-height": ["get", "measured_height"]
+        },
+        'filter': ['==', ['get', 'city'], '東京都立川市']
+      });
+
+      const rdclPathLayer = new deck.MapboxLayer({
+        id: 'rdclPathLayer',
+        type: deck.PathLayer,
+        data: './json/RdCL_16_tachikawashi_customized.json', // JSONファイル
+        pickable: true,
+        widthScale: 3,
+        widthMinPixels: 1,
+        getPath: d => d.path, // JSONのpathプロパティを使用
+        // getWidth: 2, // ラインの幅.
+        getWidth: d => {
+          if (d.properties && d.properties.vt_rnkwidth) {
+            const vtRnkWidth = d.properties.vt_rnkwidth;
+            console.log("vt_rnkwidth:", vtRnkWidth); // 値を確認
+            if (vtRnkWidth === '19.5m以上') {
+              return 6;
+            } else if (vtRnkWidth === '13m-19.5m未満') {
+              return 5;
+            } else if (vtRnkWidth === '5.5m-13m未満') {
+              return 4;
+            } else if (vtRnkWidth === '3m-5.5m未満') {
+              return 3;
+            } else if (vtRnkWidth === '3m未満') {
+              return 2;
+            }
+          }
+          console.log("Default width applied");
+          return 2;
+        },
+        getColor: [153, 153, 153, 150]
+      });
+
+      map.addLayer(rdclPathLayer);
+
+      const railtrclPathLayer = new deck.MapboxLayer({
+        id: 'railtrclPathLayer',
+        type: deck.PathLayer,
+        data: './json/RailTrCL_16_tachikawashi_customized.json', // JSONファイルのURL
+        pickable: true,
+        widthScale: 1,
+        widthMinPixels: 1,
+        getWidth: 12, // ラインの幅
+        getPath: d => d.path, // JSONのpathプロパティを使用
+        getColor: [51, 153, 255, 192]
+      });
+
+      map.addLayer(railtrclPathLayer);
+
+    })
+  </script>
+</body>
+
+</html>
